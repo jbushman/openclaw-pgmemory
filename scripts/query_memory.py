@@ -62,18 +62,18 @@ def fmt_row(row, show_score=True) -> str:
 def main():
     p = argparse.ArgumentParser(description="Search and inspect pgmemory memories")
     p.add_argument("query",           nargs="?",  help="Semantic search query")
-    p.add_argument("--agent",         default=None)
-    p.add_argument("--importance",    type=int,   choices=[1,2,3])
-    p.add_argument("--category",      default=None)
-    p.add_argument("--limit",         type=int,   default=10)
-    p.add_argument("--stats",         action="store_true")
-    p.add_argument("--list",          action="store_true")
-    p.add_argument("--include-archived", action="store_true")
+    p.add_argument("--agent",         default=None, help="Agent namespace (default: from config)")
+    p.add_argument("--importance",    type=int,   choices=[1,2,3], help="Filter by minimum importance level")
+    p.add_argument("--category",      default=None, choices=["decision","constraint","infrastructure","vision","preference","context","task","all"], help="Filter by category")
+    p.add_argument("--limit",         type=int,   default=10, help="Max results to return (default: 10)")
+    p.add_argument("--stats",         action="store_true", help="Show memory counts and health stats")
+    p.add_argument("--list",          action="store_true", help="List all memory keys")
+    p.add_argument("--include-archived", action="store_true", help="Also search archived memories")
     p.add_argument("--restore",       metavar="KEY", help="Restore archived memory by key")
     p.add_argument("--harvest",       metavar="NAMESPACE", help="Harvest memories from a sub-agent namespace")
-    p.add_argument("--harvest-threshold", type=int, default=2)
-    p.add_argument("--config",        default=str(DEFAULT_CONFIG))
-    p.add_argument("--json",          action="store_true", help="Output as JSON")
+    p.add_argument("--harvest-threshold", type=int, default=2, metavar="N", help="Only harvest memories with importance >= N (default: 2)")
+    p.add_argument("--config",        default=str(DEFAULT_CONFIG), help=f"Path to pgmemory.json (default: {DEFAULT_CONFIG})")
+    p.add_argument("--json",          action="store_true", help="Output results as JSON")
     args = p.parse_args()
 
     config     = load_config(Path(args.config))
@@ -127,7 +127,7 @@ def main():
     if args.list:
         q    = "SELECT key, category, importance, updated_at FROM memories WHERE agent=%s"
         vals = [agent_name]
-        if args.category:   q += " AND category=%s"; vals.append(args.category)
+        if args.category and args.category != 'all':   q += " AND category=%s"; vals.append(args.category)
         if args.importance: q += " AND importance=%s"; vals.append(args.importance)
         q += " ORDER BY importance DESC, category, key"
         cur.execute(q, vals)
@@ -214,7 +214,7 @@ def main():
         filters = ["agent=%s", "embedding IS NOT NULL"]
         vals    = [agent_name]
         if args.importance: filters.append("importance>=%s"); vals.append(args.importance)
-        if args.category:   filters.append("category=%s");   vals.append(args.category)
+        if args.category and args.category != 'all':   filters.append("category=%s");   vals.append(args.category)
         where = " AND ".join(filters)
 
         cur.execute(f"""
@@ -256,7 +256,7 @@ def main():
         filters = ["agent=%s"]
         vals    = [agent_name]
         if args.importance: filters.append("importance>=%s"); vals.append(args.importance)
-        if args.category:   filters.append("category=%s");   vals.append(args.category)
+        if args.category and args.category != 'all':   filters.append("category=%s");   vals.append(args.category)
         where = " AND ".join(filters)
 
         cur.execute(f"""

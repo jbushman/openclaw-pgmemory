@@ -360,8 +360,8 @@ def cmd_doctor(config: dict) -> int:
                 if stored and stored != dims:
                     err(f"DIMENSION MISMATCH: stored={stored}, provider returns {dims}")
                     info("Option A: revert provider in pgmemory.json")
-                    info("Option B: python3 setup.py --re-embed")
-                    info("Option C: python3 setup.py --reset-embeddings")
+                    info("Option B: Change embeddings.provider back to the original provider")
+                    info("Option C: Contact support or open an issue for --re-embed guidance")
                     errors.append("dimension_mismatch")
             else:
                 err(f"Test embed FAILED — check API key / provider config")
@@ -375,7 +375,7 @@ def cmd_doctor(config: dict) -> int:
         pct   = int(100 * count / max_m) if max_m else 0
         if max_m and pct >= 90:
             warn(f"{count:,} / {max_m:,} memories ({pct}% of cap)")
-            info("Run: python3 setup.py --archive-old"); warnings.append("near_cap")
+            info("Run: python3 setup.py --decay  (will archive low-relevance memories)"); warnings.append("near_cap")
         else:
             ok(f"{count:,} active memories" + (f" ({pct}% of cap)" if max_m else ""))
 
@@ -692,14 +692,14 @@ def cmd_wizard(config_path: Path, yes: bool):
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(description="pgmemory — persistent semantic memory for OpenClaw")
-    p.add_argument("--config",   default=str(DEFAULT_CONFIG))
-    p.add_argument("--validate", action="store_true")
-    p.add_argument("--migrate",  action="store_true")
-    p.add_argument("--rollback", type=int, metavar="N")
-    p.add_argument("--doctor",   action="store_true")
-    p.add_argument("--decay",    action="store_true")
+    p.add_argument("--config",   default=str(DEFAULT_CONFIG), help=f"Path to pgmemory.json (default: {DEFAULT_CONFIG})")
+    p.add_argument("--validate", action="store_true", help="Validate config file and exit")
+    p.add_argument("--migrate",  action="store_true", help="Run pending schema migrations")
+    p.add_argument("--rollback", type=int, metavar="N", help="Roll back schema to version N")
+    p.add_argument("--doctor",   action="store_true", help="Full system health check")
+    p.add_argument("--decay",    action="store_true", help="Recalculate memory relevance scores and archive faded memories")
     p.add_argument("--sync-agents", action="store_true", help="Scaffold pgmemory into all OpenClaw agent workspaces")
-    p.add_argument("--yes",      action="store_true")
+    p.add_argument("--yes",      action="store_true", help="Non-interactive mode, accept all defaults")
     args = p.parse_args()
 
     config_path = Path(args.config)

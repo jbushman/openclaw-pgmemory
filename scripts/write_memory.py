@@ -103,7 +103,7 @@ def main():
         cur.execute("""
             SELECT updated_at FROM memories
             WHERE agent=%s AND key=%s
-            AND updated_at > NOW() - INTERVAL '%s minutes'
+            AND updated_at > NOW() - ((%s || ' minutes')::interval)
         """, (agent_name, args.key, dedup_mins))
         if cur.fetchone():
             print(f"Skipped (dedup window {dedup_mins}min): {args.key}")

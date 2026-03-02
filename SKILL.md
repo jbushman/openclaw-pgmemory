@@ -137,14 +137,11 @@ python3 ~/.openclaw/skills/pgmemory/scripts/setup.py --decay
 
 ## Switching embedding providers
 
-Changing providers requires re-embedding all memories (dimension mismatch otherwise):
+Changing providers after setup requires re-embedding all memories — you cannot mix
+dimensions in the same database. Run `--doctor` first to check for mismatches.
 
-```bash
-python3 ~/.openclaw/skills/pgmemory/scripts/setup.py --re-embed \
-  --provider openai --api-key-env OPENAI_API_KEY
-```
-
-Doctor will warn you if dimensions don't match before anything breaks.
+⚠️ Provider migration (`--re-embed`) is planned for v1.1. For now: set up a fresh
+database if you need to switch providers.
 
 ## Config reference
 
