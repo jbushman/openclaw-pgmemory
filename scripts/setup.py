@@ -698,6 +698,7 @@ def main():
     p.add_argument("--rollback", type=int, metavar="N")
     p.add_argument("--doctor",   action="store_true")
     p.add_argument("--decay",    action="store_true")
+    p.add_argument("--sync-agents", action="store_true", help="Scaffold pgmemory into all OpenClaw agent workspaces")
     p.add_argument("--yes",      action="store_true")
     args = p.parse_args()
 
@@ -723,7 +724,134 @@ def main():
         if not conn: err("Cannot connect"); sys.exit(1)
         ok_ = cmd_decay(conn, config); conn.close(); sys.exit(0 if ok_ else 1)
 
+    if args.sync_agents:
+        config = load_config(config_path)
+        if not config:
+            err(f"Config not found: {config_path}"); sys.exit(1)
+        ok_ = cmd_sync_agents(config_path, config['db']['uri'])
+        sys.exit(0 if ok_ else 1)
+
     cmd_wizard(config_path, args.yes)
+
+
+# ── Sync agents ────────────────────────────────────────────────────────────────
+def find_openclaw_config() -> Optional[Path]:
+    """Find the openclaw.json config file."""
+    env_path = os.environ.get("OPENCLAW_CONFIG_PATH", "")
+    candidates = [
+        Path(env_path) if env_path else None,
+        Path.home() / ".openclaw" / "openclaw.json",
+        Path.home() / ".openclaw" / "config.json",
+    ]
+    for p in candidates:
+        if p and p.exists() and p.is_file(): return p
+    return None
+
+def get_openclaw_agents(openclaw_config: Path) -> list:
+    """Return list of {id, workspace} dicts from openclaw.json."""
+    try:
+        with open(openclaw_config) as f:
+            data = json.load(f)
+    except Exception:
+        # Try JSON5-style (strip comments)
+        import re
+        with open(openclaw_config) as f:
+            raw = f.read()
+        raw = re.sub(r'//.*', '', raw)
+        raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.DOTALL)
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+
+    agents = []
+    agent_list = data.get("agents", {}).get("list", [])
+    state_dir = Path(os.environ.get("OPENCLAW_STATE_DIR", Path.home() / ".openclaw"))
+
+    for agent in agent_list:
+        agent_id = agent.get("id", "main")
+        # Resolve workspace path
+        workspace = agent.get("workspace")
+        if workspace:
+            workspace = Path(workspace.replace("~", str(Path.home())))
+        else:
+            workspace = state_dir / f"workspace-{agent_id}"
+            if not workspace.exists() and agent_id == "main":
+                workspace = state_dir / "workspace"
+        agents.append({"id": agent_id, "workspace": workspace})
+
+    # Always include main if list is empty
+    if not agents:
+        workspace = state_dir / "workspace"
+        agents.append({"id": "main", "workspace": workspace})
+
+    return agents
+
+def cmd_sync_agents(config: Path, db_uri: str) -> bool:
+    hdr("Syncing agents")
+
+    oc_config = find_openclaw_config()
+    if not oc_config:
+        warn("Could not find openclaw.json — checking default workspace only")
+        agents = [{"id": "main", "workspace": Path.home() / ".openclaw" / "workspace"}]
+    else:
+        info(f"Found OpenClaw config: {oc_config}")
+        agents = get_openclaw_agents(oc_config)
+
+    if not agents:
+        warn("No agents found in OpenClaw config"); return True
+
+    conn = connect(db_uri)
+    if not conn:
+        err(f"Cannot connect to database"); return False
+    cur = conn.cursor()
+
+    updated = 0
+    for agent in agents:
+        agent_id  = agent["id"]
+        workspace = agent["workspace"]
+        agents_md = workspace / "AGENTS.md"
+
+        # Check if workspace exists
+        if not workspace.exists():
+            warn(f"{agent_id}: workspace not found ({workspace}) — skipping")
+            continue
+
+        # Check if AGENTS.md has pgmemory
+        if agents_md.exists():
+            content = agents_md.read_text()
+            if "pgmemory" in content:
+                ok(f"{agent_id}: already configured")
+                _ensure_session_state(cur, agent_id)
+                conn.commit()
+                continue
+
+        # Add pgmemory block
+        block = scaffold_agents_md(agent_id, db_uri, config)
+        if agents_md.exists():
+            with open(agents_md, "a") as f: f.write(block)
+        else:
+            agents_md.parent.mkdir(parents=True, exist_ok=True)
+            agents_md.write_text(block)
+
+        _ensure_session_state(cur, agent_id)
+        conn.commit()
+        ok(f"{agent_id}: pgmemory block added → {agents_md}")
+        updated += 1
+
+    cur.close(); conn.close()
+    print()
+    if updated:
+        ok(f"{updated} agent(s) updated, {len(agents)-updated} already configured")
+    else:
+        ok(f"All {len(agents)} agent(s) already have pgmemory")
+    return True
+
+def _ensure_session_state(cur, agent_id: str):
+    cur.execute("""
+        INSERT INTO session_state (agent) VALUES (%s)
+        ON CONFLICT (agent) DO NOTHING
+    """, (agent_id,))
 
 if __name__ == "__main__":
     main()
