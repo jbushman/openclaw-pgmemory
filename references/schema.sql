@@ -25,3 +25,13 @@
 
 -- pgmemory_migrations: tracks applied migrations
 -- version INT PK, filename TEXT, checksum TEXT, applied_at TIMESTAMPTZ
+
+-- archive_reason values: expired | evicted | decayed | manual
+-- archived_ttl_days: null = keep forever (default)
+-- restore_on_access: if semantic search matches archived memory, auto-restore with relevance_score=1.0
+
+-- Archive triggers (all default true, configurable independently):
+-- on_expire  — expires_at passed
+-- on_evict   — max_memories cap exceeded, lowest relevance_score evicted
+-- on_decay   — relevance_score dropped below archive_threshold (default 0.1)
+-- on_manual  — explicit --archive call or admin action
